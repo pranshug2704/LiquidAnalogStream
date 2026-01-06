@@ -3,3 +3,4 @@ numpy
 matplotlib
 einops
 transformers
+mlx
