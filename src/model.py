@@ -80,12 +80,16 @@ class LiquidMambaBlock(nn.Module):
 
         # S4D real initialization (A parameter)
         # A is (d_inner, d_state)
-        A = torch.arange(1, self.d_state + 1, dtype=torch.float32).repeat(self.d_inner, 1)
-        self.log_A_real = nn.Parameter(torch.log(A)) # We optimize log_A for stability properly? Or just A?
-        # Usually A_log used in implementations.
-        # Check standard Mamba: A is -torch.exp(A_log) to ensure stability.
-        # Let's use simple initialization for the prototype:
-        self.A_log = nn.Parameter(torch.log(torch.arange(1, self.d_state + 1, dtype=torch.float32).repeat(self.d_inner, 1)))
+        # Multi-scale: First half of state dims are "slow" (small A = long memory)
+        #              Second half are "fast" (large A = local context)
+        if hasattr(args, 'multi_scale') and args.multi_scale:
+            half = self.d_state // 2
+            A_slow = torch.arange(1, half + 1, dtype=torch.float32) * 0.1  # Slow decay
+            A_fast = torch.arange(1, self.d_state - half + 1, dtype=torch.float32) * 2.0  # Fast decay
+            A = torch.cat([A_slow, A_fast]).repeat(self.d_inner, 1)
+        else:
+            A = torch.arange(1, self.d_state + 1, dtype=torch.float32).repeat(self.d_inner, 1)
+        self.A_log = nn.Parameter(torch.log(A))
 
         self.D = nn.Parameter(torch.ones(self.d_inner))
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=args.bias)
@@ -160,18 +164,18 @@ class LiquidMambaBlock(nn.Module):
             C_t = C[:, t, :].unsqueeze(1) # (batch, 1, d_state)
             x_t = x_conv[:, t, :].unsqueeze(-1) # (batch, d_inner, 1)
 
-            # Discretize A -> A_bar = exp(dt * A)
-            dA = torch.exp(dt_t * A_t) # (batch, d_inner, d_state)
+            # Sub-stepping: divide dt by n_substeps for finer resolution
+            dt_sub = dt_t / self.n_substeps
 
-            # Discretize B -> B_bar = dt * B
-            dB = dt_t * B_t # (batch, d_inner, d_state)
+            for _ in range(self.n_substeps):
+                # Discretize A -> A_bar = exp(dt_sub * A)
+                dA = torch.exp(dt_sub * A_t) # (batch, d_inner, d_state)
 
-            # Update state: h_t = dA * h_{t-1} + dB * x_t
-            # h: (batch, d_inner, d_state)
-            # x_t: (batch, d_inner, 1)
-            # dB * x_t -> (batch, d_inner, d_state)
+                # Discretize B -> B_bar = dt_sub * B
+                dB = dt_sub * B_t # (batch, d_inner, d_state)
 
-            h = dA * h + dB * x_t
+                # Update state: h_t = dA * h_{t-1} + dB * x_t
+                h = dA * h + dB * x_t
 
             # Output: y_t = C_t * h_t
             # C_t: (batch, 1, d_state)
