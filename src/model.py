@@ -16,11 +16,17 @@ class ModelArgs:
     pad_vocab_size_multiple: int = 8
     conv_bias: bool = True
     bias: bool = False
+    # Liquid refinements
+    dt_min: float = 0.001    # Min time-step (prevents vanishing gradient)
+    dt_max: float = 0.1      # Max time-step (prevents instability)
+    n_substeps: int = 1      # Sub-steps per input byte
+    multi_scale: bool = False # Split state into slow/fast
 
     def __post_init__(self):
         self.d_inner = int(self.expand * self.d_model)
         if self.dt_rank == 'auto':
             self.dt_rank = math.ceil(self.d_model / 16)
+
 
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-5):
@@ -45,6 +51,10 @@ class LiquidMambaBlock(nn.Module):
         self.d_model = args.d_model
         self.d_state = args.d_state
         self.dt_rank = args.dt_rank
+        # Liquid refinements
+        self.dt_min = args.dt_min
+        self.dt_max = args.dt_max
+        self.n_substeps = args.n_substeps
 
         # Projects input to d_inner * 2 (for x and z)
         # We process both paths, then gate them at the end
@@ -105,7 +115,8 @@ class LiquidMambaBlock(nn.Module):
         dt, B, C = torch.split(x_dbl, [self.dt_rank, self.d_state, self.d_state], dim=-1)
 
         # dt: (B, L, dt_rank) -> (B, L, d_inner)
-        dt = F.softplus(self.dt_proj(dt)) # Ensure positive time-step!
+        # Bounded sigmoid gating: dt = sigmoid(x) * (dt_max - dt_min) + dt_min
+        dt = torch.sigmoid(self.dt_proj(dt)) * (self.dt_max - self.dt_min) + self.dt_min
 
         # B, C: (B, L, d_state)
 
