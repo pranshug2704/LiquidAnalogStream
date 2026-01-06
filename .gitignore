@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.DS_Store
+train_data.txt
+dummy_stream.txt
+.vscode/
+.idea/
+venv/
+env/
