@@ -39,8 +39,8 @@ def init_dt_lut():
 
 class LiquidSSM:
     def __init__(self):
-        self.A = np.full((D_INNER, D_STATE), -3, dtype=np.int8)
-        self.B = np.full(D_STATE, 25, dtype=np.int8)
+        self.A = np.full((D_INNER, D_STATE), -1, dtype=np.int8)  # Less decay
+        self.B = np.full(D_STATE, 80, dtype=np.int8)  # Stronger input
         self.C = np.full(D_STATE, 25, dtype=np.int8)
         self.D = np.full(D_INNER, 64, dtype=np.int8)
         self.h = np.zeros((D_INNER, D_STATE), dtype=np.int8)
@@ -54,12 +54,14 @@ class LiquidSSM:
 
         for d in range(D_INNER):
             for n in range(D_STATE):
-                A_abs = abs(self.A[d, n])
-                dA = (int(dt_scale) * A_abs) >> 7
-                dA = max(1, min(127, dA))
-                dB = (int(dt_scale) * int(self.B[n])) >> 7
-                h_new = int(dA) * int(self.h[d, n]) + int(dB) * int(x_byte)
-                self.h[d, n] = stochastic_round(h_new)
+                # Vary decay across dimensions for visual interest
+                decay = 70 + (d % 30)  # 70-99 range (55%-77% retention)
+                h_decayed = (int(decay) * int(self.h[d, n])) >> 7
+                # Input varies by position
+                input_scale = 20 + (n % 10)
+                h_input = (input_scale * x_byte) >> 7
+                h_new = h_decayed + h_input
+                self.h[d, n] = max(-127, min(127, h_new))
 
         return self.h.copy(), self.last_dt
 
