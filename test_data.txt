@@ -1,0 +1,33 @@
+The quick brown fox jumps over the lazy dog.
+Pack my box with five dozen liquor jugs.
+
+LIQUID ANALOG STREAM
+====================
+This is a test file for the Heat of Thought visualization demo.
+Watch how the neural state adapts to different patterns of text.
+
+Numbers: 1234567890
+Symbols: !@#$%^&*()
+
+Code snippet:
+def hello_world():
+    print("Hello, World!")
+    return 42
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.
+
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA (low entropy)
+asjdkfhaskjdfhaskjdfhaskjdfh (high entropy gibberish)
+
+Poetry:
+  Roses are red,
+  Violets are blue,
+  Neural networks flow,
+  And so can you.
+
+Binary pattern: 01010101010101010101010101010101
+Hex pattern: DEADBEEFCAFEBABE1234567890ABCDEF
+
+End of test file.

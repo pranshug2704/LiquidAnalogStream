@@ -41,13 +41,18 @@ class DataSource:
         self.t = 0
         self.file_data = None
         self.file_pos = 0
+        self.last_key = 0  # For keyboard mode
 
         if mode == 'file' and file_path:
             try:
                 with open(file_path, 'rb') as f:
                     self.file_data = f.read()
             except:
-                self.mode = 'sine'  # Fallback
+                self.mode = 'sine'
+
+    def set_key(self, key):
+        """Set the last pressed key for keyboard mode."""
+        self.last_key = key - 128 if key >= 0 else 0
 
     def next_byte(self):
         self.t += 1
@@ -59,7 +64,6 @@ class DataSource:
             return int(np.random.randint(-80, 80))
 
         elif self.mode == 'mixed':
-            # Alternate between patterns every 500 bytes
             phase = (self.t // 500) % 4
             if phase == 0:
                 return int(80 * np.sin(self.t * 0.05))
@@ -68,7 +72,12 @@ class DataSource:
             elif phase == 2:
                 return int(40 * np.sin(self.t * 0.2) + 40 * np.sin(self.t * 0.01))
             else:
-                return int(80 * np.sign(np.sin(self.t * 0.1)))  # Square wave
+                return int(80 * np.sign(np.sin(self.t * 0.1)))
+
+        elif self.mode == 'keyboard':
+            # Decay the key value over time for visual effect
+            decay = max(0, abs(self.last_key) - self.t % 10)
+            return int(np.sign(self.last_key) * decay) if self.last_key != 0 else 0
 
         elif self.mode == 'file' and self.file_data:
             byte = self.file_data[self.file_pos % len(self.file_data)]
@@ -118,8 +127,13 @@ def main(stdscr):
     ssm = LiquidSSM()
 
     # Data source modes
-    modes = ['sine', 'random', 'mixed']
-    mode_names = {'sine': 'Sine Wave', 'random': 'Random Noise', 'mixed': 'Mixed Patterns'}
+    modes = ['sine', 'random', 'mixed', 'keyboard']
+    mode_names = {
+        'sine': 'Sine Wave',
+        'random': 'Random Noise',
+        'mixed': 'Mixed Patterns',
+        'keyboard': 'KEYBOARD (type!)'
+    }
     mode_idx = 0
 
     # Check for file argument
@@ -156,9 +170,12 @@ def main(stdscr):
             key = stdscr.getch()
             if key == ord('q'):
                 break
-            elif key in [ord('1'), ord('2'), ord('3'), ord('4')]:
+            elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5')]:
                 mode_idx = min(key - ord('1'), len(modes) - 1)
                 source = DataSource(modes[mode_idx], file_path)
+            elif key > 0 and source.mode == 'keyboard':
+                # Feed keystroke to the model
+                source.set_key(key)
         except:
             pass
 
