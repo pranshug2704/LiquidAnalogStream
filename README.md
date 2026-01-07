@@ -67,7 +67,8 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 - [x] Stateful inference (O(1) per-byte)
 - [x] LIF refractory period (spike storm prevention)
 - [x] AXI-Stream HLS with loop unrolling
-- [x] **Wide accumulators (128×16, int32 math)** ✨
+- [x] Wide accumulators (128×16, int32 math)
+- [x] **LFSR Stochastic Rounding** ✨
 - [ ] FPGA synthesis (Vivado)
 
 ## Results
