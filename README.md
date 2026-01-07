@@ -27,6 +27,9 @@ python3 src/chat.py
 # Bit-accurate verification
 python3 src/bit_accurate_test.py
 
+# Long-duration stability (use C++ for 10M+)
+./hardware/testbench_sr
+
 # Baud-rate streaming
 python3 src/baud_stream.py 9600 "val: "
 ```
