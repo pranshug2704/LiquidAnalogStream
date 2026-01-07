@@ -3,11 +3,15 @@ heat_of_thought.py - Real-time State Heatmap Visualizer
 
 Shows the "Heat of Thought" - a live visualization of the 2KB persistent state
 as data flows through the Liquid Mamba model.
+
+Data sources: sine wave, random noise, text file, or keyboard input.
 """
 
 import curses
 import time
 import numpy as np
+import os
+import sys
 from collections import deque
 
 D_INNER = 128
@@ -30,13 +34,55 @@ def init_dt_lut():
         lut[i] = int(np.exp(-dt) * 127)
     return lut
 
+class DataSource:
+    """Generates input bytes from various sources."""
+    def __init__(self, mode='sine', file_path=None):
+        self.mode = mode
+        self.t = 0
+        self.file_data = None
+        self.file_pos = 0
+
+        if mode == 'file' and file_path:
+            try:
+                with open(file_path, 'rb') as f:
+                    self.file_data = f.read()
+            except:
+                self.mode = 'sine'  # Fallback
+
+    def next_byte(self):
+        self.t += 1
+
+        if self.mode == 'sine':
+            return int(80 * np.sin(self.t * 0.05))
+
+        elif self.mode == 'random':
+            return int(np.random.randint(-80, 80))
+
+        elif self.mode == 'mixed':
+            # Alternate between patterns every 500 bytes
+            phase = (self.t // 500) % 4
+            if phase == 0:
+                return int(80 * np.sin(self.t * 0.05))
+            elif phase == 1:
+                return int(np.random.randint(-80, 80))
+            elif phase == 2:
+                return int(40 * np.sin(self.t * 0.2) + 40 * np.sin(self.t * 0.01))
+            else:
+                return int(80 * np.sign(np.sin(self.t * 0.1)))  # Square wave
+
+        elif self.mode == 'file' and self.file_data:
+            byte = self.file_data[self.file_pos % len(self.file_data)]
+            self.file_pos += 1
+            return int(byte) - 128
+
+        else:
+            return int(80 * np.sin(self.t * 0.05))
+
 class LiquidSSM:
     def __init__(self):
         self.A = np.full((D_INNER, D_STATE), -1, dtype=np.int8)
         self.B = np.full(D_STATE, 80, dtype=np.int8)
-        self.C = np.full(D_STATE, 25, dtype=np.int8)
-        self.D = np.full(D_INNER, 64, dtype=np.int8)
-        self.h = np.zeros((D_INNER, D_STATE), dtype=np.float32)  # Float for smooth trails
+        self.h = np.zeros((D_INNER, D_STATE), dtype=np.float32)
         self.dt_lut = init_dt_lut()
         self.last_dt = 0.5
 
@@ -47,7 +93,6 @@ class LiquidSSM:
 
         for d in range(D_INNER):
             for n in range(D_STATE):
-                # Decay with trails (0.85 = 3-frame fade)
                 decay = 0.75 + 0.1 * ((d + n) % 5) / 5.0
                 h_input = 0.3 * (20 + (n % 10)) * x_byte / 127.0
                 self.h[d, n] = decay * self.h[d, n] + h_input
@@ -72,27 +117,38 @@ def main(stdscr):
     max_y, max_x = stdscr.getmaxyx()
     ssm = LiquidSSM()
 
+    # Data source modes
+    modes = ['sine', 'random', 'mixed']
+    mode_names = {'sine': 'Sine Wave', 'random': 'Random Noise', 'mixed': 'Mixed Patterns'}
+    mode_idx = 0
+
+    # Check for file argument
+    file_path = None
+    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
+        file_path = sys.argv[1]
+        modes.insert(0, 'file')
+        mode_names['file'] = f'File: {os.path.basename(file_path)}'
+
+    source = DataSource(modes[mode_idx], file_path)
+
     bytes_processed = 0
     start_time = time.time()
-    t = 0
 
-    # Energy history for waveform
     energy_history = deque(maxlen=30)
     dt_history = deque(maxlen=30)
 
     EXPLAIN = [
-        ("WHAT YOU'RE SEEING:", 6, True),
+        ("CONTROLS:", 6, True),
+        ("  [1-4] Switch data source", 1, False),
+        ("  [q] Quit", 1, False),
         ("", 1, False),
-        ("HEATMAP: The AI's 'brain state' - 2KB", 3, False),
-        ("  · dim   █ active (with fade trails)", 1, False),
+        ("HEATMAP: Brain state (2KB)", 3, False),
+        ("  · dim  █ active", 1, False),
         ("", 1, False),
-        ("Δ (DELTA): Thinking intensity", 3, False),
-        ("  Blue = fast   Red = complex", 1, False),
+        ("Δ: Thinking speed", 3, False),
+        ("  Blue=fast  Red=complex", 1, False),
         ("", 1, False),
-        ("WAVEFORM: Energy over time", 3, False),
-        ("  Color matches thinking speed", 1, False),
-        ("", 1, False),
-        ("O(1) latency - constant time!", 6, False),
+        ("O(1) constant time!", 6, False),
     ]
 
     while True:
@@ -100,13 +156,14 @@ def main(stdscr):
             key = stdscr.getch()
             if key == ord('q'):
                 break
+            elif key in [ord('1'), ord('2'), ord('3'), ord('4')]:
+                mode_idx = min(key - ord('1'), len(modes) - 1)
+                source = DataSource(modes[mode_idx], file_path)
         except:
             pass
 
-        # Process bytes
         for _ in range(30):
-            t += 1
-            x = int(80 * np.sin(t * 0.05))
+            x = source.next_byte()
             state, dt = ssm.step(x)
             bytes_processed += 1
 
@@ -114,7 +171,6 @@ def main(stdscr):
         rate = bytes_processed / elapsed if elapsed > 0 else 0
         energy = np.sum(np.abs(ssm.h))
 
-        # Track history
         energy_history.append(energy)
         dt_history.append(dt)
 
@@ -125,22 +181,20 @@ def main(stdscr):
         explain_x = hm_cols + 6
 
         try:
-            # Title
+            # Title with mode
             stdscr.addstr(0, 0, "LIQUID ANALOG STREAM", curses.color_pair(6) | curses.A_BOLD)
-            stdscr.addstr(0, 22, " - Heat of Thought", curses.color_pair(1))
+            stdscr.addstr(1, 0, f"Mode: {mode_names[modes[mode_idx]]}", curses.color_pair(7))
 
-            # Stats bar with colored energy
+            # Stats
             dt_color = 2 if dt < 0.3 else (3 if dt < 0.6 else 5)
-            stdscr.addstr(1, 0, f"Bytes: {bytes_processed:,}", curses.color_pair(1))
-            stdscr.addstr(1, 20, f"Rate: {rate:,.0f}/s", curses.color_pair(3))
-            stdscr.addstr(1, 38, f"Energy: {energy:,.0f}", curses.color_pair(dt_color))
+            stdscr.addstr(2, 0, f"Bytes: {bytes_processed:,}  Rate: {rate:,.0f}/s  Energy: {energy:,.0f}", curses.color_pair(dt_color))
 
             # Heatmap
-            stdscr.addstr(3, 0, "BRAIN STATE:", curses.color_pair(6) | curses.A_BOLD)
+            stdscr.addstr(4, 0, "BRAIN STATE:", curses.color_pair(6) | curses.A_BOLD)
 
             flat = ssm.h.flatten()[:hm_rows * hm_cols]
             for i, val in enumerate(flat):
-                y = 4 + (i // hm_cols)
+                y = 5 + (i // hm_cols)
                 x_pos = 1 + (i % hm_cols)
                 if y < max_y - 6 and x_pos < max_x - 1:
                     intensity = abs(val) / 127.0
@@ -159,16 +213,15 @@ def main(stdscr):
                     stdscr.addch(y, x_pos, char, curses.color_pair(pair))
 
             # Delta bar
-            bar_y = 4 + hm_rows + 1
+            bar_y = 5 + hm_rows + 1
             dt_label = "Fast" if dt < 0.3 else ("Med" if dt < 0.6 else "Slow")
-            stdscr.addstr(bar_y, 0, "Δ THINKING:", curses.color_pair(6) | curses.A_BOLD)
-            stdscr.addstr(bar_y, 13, f"[{dt_label:4}]", curses.color_pair(dt_color) | curses.A_BOLD)
+            stdscr.addstr(bar_y, 0, f"Δ [{dt_label:4}]:", curses.color_pair(dt_color) | curses.A_BOLD)
             bar_len = min(20, hm_cols - 1)
             bar = '█' * int(dt * bar_len) + '░' * (bar_len - int(dt * bar_len))
-            stdscr.addstr(bar_y + 1, 1, bar, curses.color_pair(dt_color))
+            stdscr.addstr(bar_y, 12, bar, curses.color_pair(dt_color))
 
-            # Energy waveform (colored by dt)
-            wave_y = bar_y + 3
+            # Energy waveform
+            wave_y = bar_y + 2
             if wave_y < max_y - 2 and len(energy_history) > 1:
                 stdscr.addstr(wave_y, 0, "ENERGY:", curses.color_pair(6) | curses.A_BOLD)
                 e_min = min(energy_history)
@@ -182,7 +235,7 @@ def main(stdscr):
                         stdscr.addch(wave_y + 1, 1 + i, wave_chars[char_idx], curses.color_pair(d_color))
 
             # Explanation panel
-            if max_x > 60:
+            if max_x > 55:
                 exp_y = 4
                 for text, color, bold in EXPLAIN:
                     if exp_y < max_y - 2:
@@ -192,8 +245,7 @@ def main(stdscr):
                         stdscr.addstr(exp_y, explain_x, text[:max_x - explain_x - 1], attr)
                         exp_y += 1
 
-            # Footer
-            stdscr.addstr(max_y - 1, 0, "[q] quit", curses.color_pair(1))
+            stdscr.addstr(max_y - 1, 0, "[1-4] modes  [q] quit", curses.color_pair(1))
 
         except curses.error:
             pass
@@ -203,6 +255,7 @@ def main(stdscr):
 
 if __name__ == "__main__":
     print("LIQUID ANALOG STREAM - Heat of Thought")
-    print("Press 'q' to quit")
-    time.sleep(0.3)
+    print("Usage: python3 heat_of_thought.py [file_path]")
+    print("Controls: [1-4] switch modes, [q] quit")
+    time.sleep(0.5)
     curses.wrapper(main)
