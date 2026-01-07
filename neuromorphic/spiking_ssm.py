@@ -97,8 +97,10 @@ def run_simulation():
 
         # LIF state
         v = np.zeros(D_STATE)  # Membrane potential
+        refractory = np.zeros(D_STATE)  # Refractory counter (prevents spike storms)
         du = 0.1  # Leak
         threshold = 1.0
+        refractory_period = 3  # Timesteps neuron must wait after spiking
 
         outputs = []
         spike_counts = np.zeros(D_STATE)
@@ -107,15 +109,22 @@ def run_simulation():
             # Input current
             current = B @ input_data[t]
 
-            # LIF update: v = v * (1 - du) + current
-            v = v * (1 - du) + current
+            # Decrease refractory counters
+            refractory = np.maximum(0, refractory - 1)
 
-            # Spike detection
-            spikes = (v >= threshold).astype(np.float32)
+            # Neurons in refractory period cannot integrate
+            active = (refractory == 0).astype(np.float32)
+
+            # LIF update: v = v * (1 - du) + current (only for active neurons)
+            v = (v * (1 - du) + current) * active
+
+            # Spike detection (only non-refractory neurons can spike)
+            spikes = ((v >= threshold) & (refractory == 0)).astype(np.float32)
             spike_counts += spikes
 
-            # Reset after spike
+            # Reset after spike and set refractory period
             v = v * (1 - spikes)
+            refractory = refractory + spikes * refractory_period
 
             # Output
             out = C @ spikes

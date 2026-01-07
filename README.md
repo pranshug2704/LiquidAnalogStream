@@ -62,17 +62,20 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 - [x] Phase 5: MLX (Apple Silicon)
 - [x] Phase 5: Hardware Emulation (int8 C++)
 - [x] Liquid Refinements (bounded Δ, sub-stepping, continuous embedding)
-- [ ] Stateful inference (O(1) per-byte)
+- [x] **Stateful inference (O(1) per-byte)** ✨
+- [x] LIF refractory period (spike storm prevention)
 - [ ] FPGA deployment (Vivado HLS)
 
 ## Results
 
-| Metric          | Value                       |
-| --------------- | --------------------------- |
-| Training Loss   | 0.64 (2 epochs)             |
-| Generation      | `val: 0.999\nval: 0.999...` |
-| Latency         | 4-6ms/byte                  |
-| int8 Saturation | 0%                          |
+| Metric            | Value                       |
+| ----------------- | --------------------------- |
+| Training Loss     | 0.64 (2 epochs)             |
+| Generation        | `val: 0.999\nval: 0.999...` |
+| Stateful Latency  | **0.176ms/byte** (O(1))     |
+| Latency Ratio     | **0.90x** (constant time)   |
+| int8 Saturation   | 0%                          |
+| LIF Spike Control | 18 spikes / 64 steps        |
 
 ## License
 
