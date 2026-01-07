@@ -21,6 +21,7 @@ class ModelArgs:
     dt_max: float = 0.1      # Max time-step (prevents instability)
     n_substeps: int = 1      # Sub-steps per input byte
     multi_scale: bool = False # Split state into slow/fast
+    continuous_embed: bool = False  # Use sin/cos embedding instead of lookup
 
     def __post_init__(self):
         self.d_inner = int(self.expand * self.d_model)
@@ -37,6 +38,34 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         output = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
         return output * self.weight
+
+class ContinuousEmbedding(nn.Module):
+    """
+    Continuous sin/cos embedding for bytes.
+    Maps byte values to points on a circle, ensuring nearby bytes are mathematically similar.
+    """
+    def __init__(self, d_model: int, vocab_size: int = 256):
+        super().__init__()
+        self.d_model = d_model
+        self.vocab_size = vocab_size
+        # Learnable frequency multipliers for each dimension
+        self.freq = nn.Parameter(torch.randn(d_model // 2) * 0.1 + 1.0)
+        self.phase = nn.Parameter(torch.zeros(d_model // 2))
+        # Linear projection to full d_model
+        self.proj = nn.Linear(d_model, d_model)
+
+    def forward(self, x):
+        # x: (batch, seq_len) of byte values 0-255
+        # Normalize to [0, 2π]
+        theta = x.float() / (self.vocab_size - 1) * 2 * math.pi  # (B, L)
+        theta = theta.unsqueeze(-1)  # (B, L, 1)
+
+        # Apply learned frequencies
+        angles = theta * self.freq + self.phase  # (B, L, d_model//2)
+
+        # Sin/cos encoding
+        emb = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)  # (B, L, d_model)
+        return self.proj(emb)
 
 class LiquidMambaBlock(nn.Module):
     """
@@ -119,8 +148,9 @@ class LiquidMambaBlock(nn.Module):
         dt, B, C = torch.split(x_dbl, [self.dt_rank, self.d_state, self.d_state], dim=-1)
 
         # dt: (B, L, dt_rank) -> (B, L, d_inner)
-        # Bounded sigmoid gating: dt = sigmoid(x) * (dt_max - dt_min) + dt_min
+        # Bounded sigmoid gating with epsilon floor (Lipschitz constraint)
         dt = torch.sigmoid(self.dt_proj(dt)) * (self.dt_max - self.dt_min) + self.dt_min
+        dt = torch.clamp(dt, min=1e-4)  # Epsilon floor for stability
 
         # B, C: (B, L, d_state)
 
@@ -203,15 +233,16 @@ class LiquidStreamModel(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
-        self.embedding = nn.Embedding(args.vocab_size, args.d_model)
+        # Choose embedding type
+        if hasattr(args, 'continuous_embed') and args.continuous_embed:
+            self.embedding = ContinuousEmbedding(args.d_model, args.vocab_size)
+        else:
+            self.embedding = nn.Embedding(args.vocab_size, args.d_model)
         self.layers = nn.ModuleList([
             LiquidMambaBlock(args) for _ in range(args.n_layer)
         ])
         self.norm_f = RMSNorm(args.d_model)
         self.lm_head = nn.Linear(args.d_model, args.vocab_size, bias=False)
-
-        # Tie weights?
-        # self.lm_head.weight = self.embedding.weight
 
     def forward(self, x):
         """
