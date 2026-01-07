@@ -80,6 +80,10 @@ def train():
     total_time = time.time() - start_time
     print(f"Training finished in {total_time:.2f}s")
 
+    # Save model
+    torch.save(model.state_dict(), 'model.pt')
+    print("Model saved to model.pt")
+
     # Verification: Generate
     print("\nGenerative Verification:")
     model.eval()

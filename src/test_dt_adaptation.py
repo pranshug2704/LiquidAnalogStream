@@ -48,13 +48,13 @@ def extract_dt_values(model, input_bytes):
 
 def test_adaptation():
     """Test dt adaptation on different input patterns."""
-    # Model with continuous embedding
+    # Model matching train.py config
     args = ModelArgs(
         d_model=64,
         n_layer=2,
-        continuous_embed=True,
-        multi_scale=True,
-        n_substeps=2
+        vocab_size=256,
+        d_state=16,
+        dt_rank='auto'
     )
     model = LiquidStreamModel(args)
 
