@@ -52,7 +52,8 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 ├── hardware/
 │   ├── ssm_kernel.cpp        # Q16.16 fixed-point
 │   ├── ssm_kernel_fixed8.cpp # int8 for analog HW
-│   └── ssm_axistream.cpp     # AXI-Stream HLS wrapper
+│   ├── ssm_axistream.cpp     # AXI-Stream HLS wrapper
+│   └── ssm_kernel_wide.cpp   # Full 128×16 with int32 acc
 └── neuromorphic/
     └── spiking_ssm.py        # LIF with refractory period
 ```
@@ -65,19 +66,19 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 - [x] Liquid Refinements (bounded Δ, sub-stepping, continuous embedding)
 - [x] Stateful inference (O(1) per-byte)
 - [x] LIF refractory period (spike storm prevention)
-- [x] **AXI-Stream HLS with loop unrolling** ✨
+- [x] AXI-Stream HLS with loop unrolling
+- [x] **Wide accumulators (128×16, int32 math)** ✨
 - [ ] FPGA synthesis (Vivado)
 
 ## Results
 
-| Metric            | Value                       |
-| ----------------- | --------------------------- |
-| Training Loss     | 0.64 (2 epochs)             |
-| Generation        | `val: 0.999\nval: 0.999...` |
-| Stateful Latency  | **0.176ms/byte** (O(1))     |
-| Latency Ratio     | **0.90x** (constant time)   |
-| int8 Saturation   | 0%                          |
-| LIF Spike Control | 18 spikes / 64 steps        |
+| Metric               | Value                        |
+| -------------------- | ---------------------------- |
+| Training Loss        | 0.64 (2 epochs)              |
+| Stateful Latency     | **0.176ms/byte** (O(1))      |
+| Wide Kernel (128×16) | **0% saturation, 2KB/layer** |
+| Drift Correlation    | **0.9997** (Python vs C++)   |
+| LIF Spike Control    | 18 spikes / 64 steps         |
 
 ## License
 
