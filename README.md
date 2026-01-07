@@ -44,16 +44,17 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 
 ```
 ├── src/
-│   ├── model.py           # Liquid Mamba implementation
-│   ├── train.py           # Training loop
-│   ├── stream.py          # Generator-based streaming
-│   ├── baud_stream.py     # Constant baud-rate output
-│   └── visualize_dt.py    # dt visualization
+│   ├── model.py              # Liquid Mamba implementation
+│   ├── train.py              # Training loop
+│   ├── stateful_inference.py # O(1) per-byte generation
+│   ├── baud_stream.py        # Constant baud-rate output
+│   └── visualize_dt.py       # dt visualization
 ├── hardware/
-│   ├── ssm_kernel.cpp     # Q16.16 fixed-point kernel
-│   └── ssm_kernel_fixed8.cpp  # int8 for analog HW
+│   ├── ssm_kernel.cpp        # Q16.16 fixed-point
+│   ├── ssm_kernel_fixed8.cpp # int8 for analog HW
+│   └── ssm_axistream.cpp     # AXI-Stream HLS wrapper
 └── neuromorphic/
-    └── spiking_ssm.py     # LIF neuron prototype
+    └── spiking_ssm.py        # LIF with refractory period
 ```
 
 ## Roadmap
@@ -62,9 +63,10 @@ Bytes (0-255) → Embedding → [Liquid Mamba Block × N] → Output
 - [x] Phase 5: MLX (Apple Silicon)
 - [x] Phase 5: Hardware Emulation (int8 C++)
 - [x] Liquid Refinements (bounded Δ, sub-stepping, continuous embedding)
-- [x] **Stateful inference (O(1) per-byte)** ✨
+- [x] Stateful inference (O(1) per-byte)
 - [x] LIF refractory period (spike storm prevention)
-- [ ] FPGA deployment (Vivado HLS)
+- [x] **AXI-Stream HLS with loop unrolling** ✨
+- [ ] FPGA synthesis (Vivado)
 
 ## Results
 
